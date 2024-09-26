@@ -1,0 +1,21 @@
+name: Docker Image CI
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+jobs:
+  build:
+    runs-on: [self-hosted, oracle, ARM64, kinest1997]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Login Dockerhub
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+        run: echo $DOCKER_PASSWORD | sudo docker login -u $DOCKER_USERNAME --password-stdin
+
+      - name: Build and push Docker image
+        run: |
+          sudo docker buildx build --platform linux/arm64 -t stevenkais/kinest1997:nestjs --push .

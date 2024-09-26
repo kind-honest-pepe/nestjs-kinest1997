@@ -1,0 +1,82 @@
+name: CD Pipeline
+
+on:
+    workflow_run:
+        workflows: ["Docker Image CI"]
+        types:
+            - completed
+
+jobs:
+    deploy:
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        runs-on: [self-hosted, oracle, ARM64, kinest1997]
+
+        steps:
+            - name: Login Dockerhub
+              env:
+                  DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+                  DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+              run: sudo echo $DOCKER_PASSWORD | sudo docker login -u $DOCKER_USERNAME --password-stdin
+
+            - name: Checkout code
+              uses: actions/checkout@v3
+
+            - name: Pull Docker image
+              run: sudo docker pull stevenkais/kinest1997:nestjs
+
+            - name: Create .env.development file
+              run: |
+                  echo "ENV=development" >> .env.development
+                  echo "REDIS_HOST=redis" >> .env.development
+            - name: Determine current active deployment
+              id: current_deployment
+              run: |
+                  if sudo docker ps | grep -q app_blue; then
+                    echo "current=blue" >> $GITHUB_OUTPUT
+                    echo "target=green" >> $GITHUB_OUTPUT
+                  elif sudo docker ps | grep -q app_green; then
+                    echo "current=green" >> $GITHUB_OUTPUT
+                    echo "target=blue" >> $GITHUB_OUTPUT
+                  else
+                    echo "No containers running. Starting with blue."
+                    echo "current=none" >> $GITHUB_OUTPUT
+                    echo "target=blue" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Stop and remove existing target container
+              run: |
+                  sudo docker-compose stop app_${{ steps.current_deployment.outputs.target }}
+                  sudo docker-compose rm -f app_${{ steps.current_deployment.outputs.target }}
+
+            - name: Deploy new version
+              run: |
+                  sudo docker-compose --env-file .env.development up -d app_${{ steps.current_deployment.outputs.target }}
+
+            - name: Wait for new deployment to be ready
+              run: |
+                  echo "Waiting for new deployment to be ready..."
+                  sleep 30
+                  echo "Proceeding with deployment"
+
+            - name: Update Nginx configuration
+              run: |
+                  sudo sed -i 's/server localhost:308[12];/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
+                  sudo sed -i 's/server localhost:308[12] backup;/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
+                  sudo sed -i 's/server localhost:800[12];/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
+                  sudo sed -i 's/server localhost:800[12] backup;/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
+                  sudo nginx -s reload
+
+            - name: Wait for traffic to switch
+              run: sleep 15
+
+            - name: Stop and remove old deployment
+              if: steps.current_deployment.outputs.current != 'none'
+              run: |
+                  sudo docker-compose stop app_${{ steps.current_deployment.outputs.current }}
+                  sudo docker-compose rm -f app_${{ steps.current_deployment.outputs.current }}
+
+            - name: Clean up Docker resources
+              run: |
+                  sudo docker container prune -f
+                  sudo docker image prune -a -f
+                  sudo docker volume prune -f

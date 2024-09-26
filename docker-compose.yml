@@ -1,0 +1,36 @@
+version: "3.8"
+services:
+    app_blue:
+        build: .
+        ports:
+            - "3081:3080"
+            - "8001:8000"
+        depends_on:
+            - redis
+        environment:
+            - ENV
+            - REDIS_HOST
+        networks:
+            - kinest1997-network
+    app_green:
+        build: .
+        ports:
+            - "3082:3080"
+            - "8002:8000"
+        depends_on:
+            - redis
+        environment:
+            - ENV
+            - REDIS_HOST
+        networks:
+            - kinest1997-network
+    redis:
+        image: "redis:latest"
+        ports:
+            - "6379:6379"
+        networks:
+            - kinest1997-network
+
+networks:
+    kinest1997-network:
+        driver: bridge
