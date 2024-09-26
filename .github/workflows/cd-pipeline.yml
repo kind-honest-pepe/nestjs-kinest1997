@@ -60,10 +60,10 @@ jobs:
 
       - name: Update Nginx configuration
         run: |
-          sudo sed -i 's/server localhost:308[12];/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
-          sudo sed -i 's/server localhost:308[12] backup;/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
-          sudo sed -i 's/server localhost:800[12];/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
-          sudo sed -i 's/server localhost:800[12] backup;/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/dev.server.nowauction.kr
+          sudo sed -i 's/server localhost:308[12];/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/kinest1997.com
+          sudo sed -i 's/server localhost:308[12] backup;/server localhost:308${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/kinest1997.com
+          sudo sed -i 's/server localhost:800[12];/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '1' || '2' }};/' /etc/nginx/sites-enabled/kinest1997.com
+          sudo sed -i 's/server localhost:800[12] backup;/server localhost:800${{ steps.current_deployment.outputs.target == 'blue' && '2' || '1' }} backup;/' /etc/nginx/sites-enabled/kinest1997.com
           sudo nginx -s reload
 
       - name: Wait for traffic to switch
