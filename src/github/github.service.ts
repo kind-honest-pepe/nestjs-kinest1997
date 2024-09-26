@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { isText, Element } from 'domhandler';
-import { Request } from 'express';
 
 export interface ParsedQuery {
   years: Array<number>;
@@ -11,17 +10,13 @@ export interface ParsedQuery {
   format: QueryParams['format'];
 }
 
-interface Params {
-  username: string;
-}
-
 interface QueryParams {
   y?: string | Array<string>;
   format?: 'nested';
 }
 
 type Level = 0 | 1 | 2 | 3 | 4;
-type Year = number | 'lastYear';
+type Year = number | 'last';
 
 interface Contribution {
   date: string;
@@ -66,7 +61,7 @@ export class GithubService {
    */
   private async scrapeYearLinks(
     username: string,
-    query: ParsedQuery,
+    years?: string,
   ): Promise<Array<{ year: number }>> {
     try {
       const url = `https://github.com/${username}?action=show&controller=profiles&tab=contributions&user_id=${username}`;
@@ -79,7 +74,7 @@ export class GithubService {
           year: parseInt($(a).text().trim()),
         }))
         .filter((link) =>
-          query.fetchAll ? true : query.years.includes(link.year),
+          years ? years.includes(link.year.toString()) : true,
         );
     } catch (error) {
       throw new UserNotFoundError(username);
@@ -92,10 +87,9 @@ export class GithubService {
   private async scrapeContributionsForYear(
     year: Year,
     username: string,
-    format?: 'nested',
   ): Promise<Response | NestedResponse> {
     const url =
-      year === 'lastYear'
+      year === 'last'
         ? `https://github.com/users/${username}/contributions`
         : `https://github.com/users/${username}/contributions?tab=overview&from=${year}-12-01&to=${year}-12-31`;
 
@@ -131,36 +125,17 @@ export class GithubService {
       total: {
         [year]: total,
       },
-      contributions: format === 'nested' ? {} : [],
+      contributions: [],
     };
 
-    if (format === 'nested') {
-      (response as NestedResponse).contributions = sortedDays.reduce<
-        NestedResponse['contributions']
-      >((data, day) => {
-        const { date, contribution } = this.parseDay(day, tooltipsByDayId);
-        const [y, m, d] = date;
-
-        if (!data[y]) data[y] = {};
-        if (!data[y][m]) data[y][m] = {};
-
-        data[y][m][d] = contribution;
-
-        return data;
-      }, {});
-    } else {
-      (response as unknown as Response).contributions = sortedDays.map(
-        (day) => this.parseDay(day, tooltipsByDayId).contribution,
-      );
-    }
+    response.contributions = sortedDays.map(
+      (day) => this.parseDay(day, tooltipsByDayId).contribution,
+    );
 
     return response;
   }
 
-  private parseDay(
-    day: Element,
-    tooltipsByDayId: Record<string, Element>,
-  ) {
+  private parseDay(day: Element, tooltipsByDayId: Record<string, Element>) {
     const attr = {
       id: day.attribs['id'],
       date: day.attribs['data-date'],
@@ -213,33 +188,22 @@ export class GithubService {
    */
   public async scrapeGitHubContributions(
     username: string,
-    query: ParsedQuery,
+    years?: string,
   ): Promise<Response | NestedResponse> {
-    const yearLinks = await this.scrapeYearLinks(username, query);
-    const contributionsForYear = yearLinks.map((link) =>
-      this.scrapeContributionsForYear(link.year, username, query.format),
-    );
+    const yearLinks = await this.scrapeYearLinks(username, years);
+    let contributionsForYear = [];
 
-    if (query.lastYear) {
+    if (years === 'last') {
       contributionsForYear.push(
-        this.scrapeContributionsForYear('lastYear', username, query.format),
+        this.scrapeContributionsForYear('last', username),
+      );
+    } else {
+      contributionsForYear = yearLinks.map((link) =>
+        this.scrapeContributionsForYear(link.year, username),
       );
     }
 
     return Promise.all(contributionsForYear).then((contributions) => {
-      if (query.format === 'nested') {
-        return (contributions as Array<NestedResponse>).reduce(
-          (acc, curr) => ({
-            total: { ...acc.total, ...curr.total },
-            contributions: { ...acc.contributions, ...curr.contributions },
-          }),
-          {
-            total: {},
-            contributions: {},
-          } as NestedResponse,
-        );
-      }
-
       return (contributions as Array<Response>).reduce(
         (acc, curr) => ({
           total: { ...acc.total, ...curr.total },
