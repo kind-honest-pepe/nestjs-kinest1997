@@ -21,10 +21,12 @@
     "lint:fix": "eslint . --ext .ts --fix"
   },
   "dependencies": {
+    "@nestjs/cache-manager": "^2.2.2",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "axios": "^1.7.6",
+    "cache-manager": "^5.7.6",
     "cheerio": "^1.0.0",
     "jsdom": "^25.0.0",
     "reflect-metadata": "^0.2.0",

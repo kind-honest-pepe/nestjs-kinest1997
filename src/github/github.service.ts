@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import { isText, Element } from 'domhandler';
+import { Injectable, Inject } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { Cache } from "cache-manager";
+import axios from "axios";
+import * as cheerio from "cheerio";
+import { isText, Element } from "domhandler";
 
 export interface ParsedQuery {
   years: Array<number>;
@@ -56,6 +58,8 @@ const requestOptions = (username: string) => ({
 
 @Injectable()
 export class GithubService {
+  constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache) {}
+
   /**
    * @throws UserNotFoundError
    */
@@ -190,31 +194,51 @@ export class GithubService {
     username: string,
     years?: string,
   ): Promise<Response | NestedResponse> {
-    const yearLinks = await this.scrapeYearLinks(username, years);
-    let contributionsForYear = [];
+    const cacheKey = `github_contributions:${username}:${years || "all"}`;
+    const cachedData = await this.cacheManager.get<Response | NestedResponse>(cacheKey);
 
-    if (years === 'last') {
-      contributionsForYear.push(
-        this.scrapeContributionsForYear('last', username),
-      );
-    } else {
-      contributionsForYear = yearLinks.map((link) =>
-        this.scrapeContributionsForYear(link.year, username),
-      );
+    if (cachedData) {
+      console.log(`캐시에서 데이터 반환: ${username}`);
+      return cachedData;
     }
 
-    return Promise.all(contributionsForYear).then((contributions) => {
-      return (contributions as Array<Response>).reduce(
-        (acc, curr) => ({
-          total: { ...acc.total, ...curr.total },
-          contributions: [...acc.contributions, ...curr.contributions],
-        }),
-        {
-          total: {},
-          contributions: [],
-        } as Response,
-      );
-    });
+    try {
+      const yearLinks = await this.scrapeYearLinks(username, years);
+      let contributionsForYear = [];
+
+      if (years === "last") {
+        contributionsForYear.push(
+          this.scrapeContributionsForYear("last", username),
+        );
+      } else {
+        contributionsForYear = yearLinks.map((link) =>
+          this.scrapeContributionsForYear(link.year, username),
+        );
+      }
+
+      const result = await Promise.all(contributionsForYear).then((contributions) => {
+        return (contributions as Array<Response>).reduce(
+          (acc, curr) => ({
+            total: { ...acc.total, ...curr.total },
+            contributions: [...acc.contributions, ...curr.contributions],
+          }),
+          {
+            total: {},
+            contributions: [],
+          } as Response,
+        );
+      });
+
+      // 결과를 캐시에 저장 (30분 TTL 설정)
+      await this.cacheManager.set(cacheKey, result); // 1800000 밀리초 = 30분
+
+      return result;
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(`GitHub 기여도 스크래핑 실패: ${error.message}`);
+      }
+      throw error;
+    }
   }
 }
 
